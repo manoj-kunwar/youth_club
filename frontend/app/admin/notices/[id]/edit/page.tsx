@@ -1,0 +1,393 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
+import { AdminShell } from '@/components/admin/AdminShell';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import {
+  Bell,
+  Pin,
+  Calendar,
+  Paperclip,
+  ArrowLeft,
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
+  Info,
+  Sparkles,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { apiClient } from '@/lib/api-client';
+import { useNotice } from '@/hooks/use-queries';
+import type { NoticeCategory, NoticePriority } from '@/types';
+
+const NOTICE_CATEGORIES: { value: NoticeCategory; label: string }[] = [
+  { value: 'general', label: 'General Announcement' },
+  { value: 'event', label: 'Event Notice' },
+  { value: 'urgent', label: 'Urgent Alert' },
+  { value: 'recruitment', label: 'Member Recruitment' },
+  { value: 'financial', label: 'Financial & Transparency' },
+  { value: 'administrative', label: 'Administrative' },
+  { value: 'other', label: 'Other' },
+];
+
+const NOTICE_PRIORITIES: { value: NoticePriority; label: string; badgeClass: string }[] = [
+  { value: 'low', label: 'Low', badgeClass: 'text-muted-foreground' },
+  { value: 'medium', label: 'Medium', badgeClass: 'text-blue-600' },
+  { value: 'high', label: 'High', badgeClass: 'text-amber-600' },
+  { value: 'urgent', label: 'Urgent', badgeClass: 'text-red-600 font-bold' },
+];
+
+export default function EditNoticePage() {
+  const params = useParams();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const noticeId = params['id'] as string;
+
+  const { data: notice, isLoading: isLoadingNotice, error: loadError } = useNotice(noticeId);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Form states
+  const [title, setTitle] = useState('');
+  const [summary, setSummary] = useState('');
+  const [content, setContent] = useState('');
+  const [category, setCategory] = useState<NoticeCategory>('general');
+  const [priority, setPriority] = useState<NoticePriority>('medium');
+  const [expiryDate, setExpiryDate] = useState('');
+  const [attachmentUrl, setAttachmentUrl] = useState('');
+  const [pinned, setPinned] = useState(false);
+  const [published, setPublished] = useState(true);
+
+  useEffect(() => {
+    if (notice) {
+      setTitle(notice.title || '');
+      setSummary(notice.summary || '');
+      setContent(notice.content || '');
+      setCategory(notice.category || 'general');
+      setPriority(notice.priority || 'medium');
+      if (notice.expiryDate) {
+        setExpiryDate(new Date(notice.expiryDate).toISOString().split('T')[0]);
+      }
+      setAttachmentUrl(notice.attachmentUrl || '');
+      setPinned(!!notice.pinned);
+      setPublished(!!notice.published);
+    }
+  }, [notice]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+
+    if (!title.trim()) {
+      setFormError('Notice title is required.');
+      return;
+    }
+    if (!content.trim()) {
+      setFormError('Notice content is required.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const toastId = toast.loading('Updating notice...');
+
+    try {
+      const payload: Record<string, unknown> = {
+        title: title.trim(),
+        summary: summary.trim() || undefined,
+        content: content.trim(),
+        category,
+        priority,
+        attachmentUrl: attachmentUrl.trim() || undefined,
+        expiryDate: expiryDate ? new Date(expiryDate).toISOString() : undefined,
+        pinned,
+        published,
+      };
+
+      await apiClient.patch(`/notices/${noticeId}`, payload);
+
+      toast.success('Notice updated successfully!', {
+        id: toastId,
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['notices'] });
+      queryClient.invalidateQueries({ queryKey: ['notice', noticeId] });
+
+      router.push('/admin/notices');
+    } catch (err: any) {
+      const msg = err.message || 'Failed to update notice.';
+      setFormError(msg);
+      toast.error('Failed to update notice', {
+        id: toastId,
+        description: msg,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (isLoadingNotice) {
+    return (
+      <AdminShell title="Edit Notice">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="h-8 w-8 animate-spin text-red-600" />
+        </div>
+      </AdminShell>
+    );
+  }
+
+  if (loadError || !notice) {
+    return (
+      <AdminShell title="Edit Notice">
+        <div className="p-8 text-center space-y-4">
+          <p className="text-destructive font-semibold">Failed to load notice details.</p>
+          <Button asChild variant="outline">
+            <Link href="/admin/notices">Back to Notices</Link>
+          </Button>
+        </div>
+      </AdminShell>
+    );
+  }
+
+  return (
+    <AdminShell title={`Edit Notice: ${notice.title}`}>
+      <div className="space-y-6 max-w-4xl mx-auto pb-12">
+        <div className="flex items-center justify-between">
+          <Button variant="ghost" size="sm" asChild className="gap-2 text-muted-foreground hover:text-foreground">
+            <Link href="/admin/notices">
+              <ArrowLeft className="h-4 w-4" />
+              <span>Back to Notices</span>
+            </Link>
+          </Button>
+          <span className="text-xs font-mono text-muted-foreground">ID: {noticeId}</span>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-8 bg-card border border-border/70 rounded-2xl p-4 sm:p-6 md:p-8 shadow-sm">
+          <div className="border-b border-border/60 pb-5">
+            <h1 className="text-xl md:text-2xl font-bold tracking-tight text-foreground font-display">
+              Edit Notice
+            </h1>
+            <p className="text-xs md:text-sm text-muted-foreground mt-0.5">
+              Update notice text, category, priority, or expiration date.
+            </p>
+          </div>
+
+          {formError && (
+            <div className="rounded-xl border border-destructive/50 bg-destructive/10 p-4 flex items-start gap-3 text-destructive">
+              <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+              <div className="text-xs md:text-sm">
+                <p className="font-semibold">Unable to save notice</p>
+                <p className="mt-0.5 opacity-90">{formError}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Section 1 */}
+          <div className="space-y-4">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Info className="h-4 w-4 text-red-600" />
+              <span>Notice Details</span>
+            </h2>
+
+            <div className="space-y-2">
+              <Label htmlFor="title" className="text-xs font-semibold">
+                Notice Title <span className="text-red-600">*</span>
+              </Label>
+              <Input
+                id="title"
+                required
+                maxLength={300}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="h-10 text-sm font-medium"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="category" className="text-xs font-semibold">
+                  Notice Category <span className="text-red-600">*</span>
+                </Label>
+                <select
+                  id="category"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value as NoticeCategory)}
+                  className="w-full h-10 px-3 rounded-lg border border-input bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-600"
+                >
+                  {NOTICE_CATEGORIES.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="priority" className="text-xs font-semibold">
+                  Priority Level <span className="text-red-600">*</span>
+                </Label>
+                <select
+                  id="priority"
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value as NoticePriority)}
+                  className="w-full h-10 px-3 rounded-lg border border-input bg-background text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-600"
+                >
+                  {NOTICE_PRIORITIES.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <Label htmlFor="summary" className="text-xs font-semibold">
+                  Brief Summary (Optional)
+                </Label>
+                <span className={`text-[11px] ${summary.length > 480 ? 'text-amber-600 font-bold' : 'text-muted-foreground'}`}>
+                  {summary.length} / 500
+                </span>
+              </div>
+              <Textarea
+                id="summary"
+                rows={2}
+                maxLength={500}
+                value={summary}
+                onChange={(e) => setSummary(e.target.value)}
+                className="text-sm resize-none"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="content" className="text-xs font-semibold">
+                Full Notice Body Content <span className="text-red-600">*</span>
+              </Label>
+              <Textarea
+                id="content"
+                required
+                rows={8}
+                maxLength={50000}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                className="text-sm font-sans"
+              />
+            </div>
+          </div>
+
+          {/* Section 2 */}
+          <div className="space-y-4 pt-4 border-t border-border/60">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-red-600" />
+              <span>Expiry & Attachments</span>
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="expiry-date" className="text-xs font-semibold">
+                  Expiration Date (Optional)
+                </Label>
+                <Input
+                  id="expiry-date"
+                  type="date"
+                  value={expiryDate}
+                  onChange={(e) => setExpiryDate(e.target.value)}
+                  className="h-10 text-sm"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="attachment-url" className="text-xs font-semibold">
+                  Document / PDF Link (Optional)
+                </Label>
+                <div className="relative">
+                  <Paperclip className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="attachment-url"
+                    type="url"
+                    placeholder="https://example.org/documents/notice.pdf"
+                    value={attachmentUrl}
+                    onChange={(e) => setAttachmentUrl(e.target.value)}
+                    className="h-10 pl-9 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3 */}
+          <div className="space-y-4 pt-4 border-t border-border/60">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-red-600" />
+              <span>Options</span>
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="p-4 rounded-xl border border-border/60 bg-muted/20 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                    <Pin className="h-3.5 w-3.5 text-red-600" />
+                    <span>Pin to Top</span>
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">Keep pinned at the top of the board.</p>
+                </div>
+                <Switch
+                  checked={pinned}
+                  onCheckedChange={setPinned}
+                />
+              </div>
+
+              <div className="p-4 rounded-xl border border-border/60 bg-muted/20 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Published</p>
+                  <p className="text-[11px] text-muted-foreground">Make visible on the public notice board.</p>
+                </div>
+                <Switch
+                  checked={published}
+                  onCheckedChange={setPublished}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-6 border-t border-border/60 flex flex-col sm:flex-row items-center justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.push('/admin/notices')}
+              disabled={isSubmitting}
+              className="w-full sm:w-auto text-xs font-semibold"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold gap-2 w-full sm:w-auto text-xs px-6 h-10 shadow-sm"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Updating...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  <span>Update Notice</span>
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </AdminShell>
+  );
+}
