@@ -1,9 +1,10 @@
 import type { NextConfig } from 'next';
 
+
 const nextConfig: NextConfig = {
   devIndicators: false,
+  typedRoutes: false,
   experimental: {
-    typedRoutes: false,
     optimizePackageImports: ['lucide-react', 'date-fns'],
   },
   images: {
